@@ -23,6 +23,7 @@ class openshiftinstaller (
   $master_value       = 'openshift-master',
   $minion_value       = 'openshift-minion',
   $cluster_name_fact  = 'openshift_cluster_name',
+  $node_labels_fact   = 'node_labels',
   $install_type       = 'automatic',
 
   # inventory variable settings
@@ -80,6 +81,11 @@ class openshiftinstaller (
       $nodes_clusters = query_facts(
         "${query_fact}=\"${minion_value}\"",
         [ $cluster_name_fact ])
+
+      $nodes_labels_facts = query_facts(
+        "${query_fact}=\"${minion_value}\"",
+        [ $node_labels_fact ])
+
     } else {
       $masters_clusters = $::openshiftinstaller::params::test_masters
       $nodes_clusters   = $::openshiftinstaller::params::test_minions
@@ -99,7 +105,7 @@ class openshiftinstaller (
         @invfiles[cluster_name] ||= {}
         cluster = @invfiles[cluster_name]
         cluster["masters"] ||= []
-        cluster["masters"] << nodename
+        cluster["masters"] << nodename + " openshift_hostname=#{nodename}"
       }
 
       @cluster_names.uniq!
@@ -113,7 +119,11 @@ class openshiftinstaller (
         # lets go on.
         cluster = @invfiles[cluster_name]
         cluster["nodes"] ||= []
-        cluster["nodes"] << nodename
+        if @nodes_labels_facts[nodename] != nil
+          cluster["nodes"] << nodename + " openshift_hostname=#{nodename}" + " openshift_node_labels=\"#{@nodes_labels_facts[nodename]["node_labels"]}\""
+        else
+          cluster["nodes"] << nodename + " openshift_hostname=#{nodename}"
+        end
       }
 
     %>')
