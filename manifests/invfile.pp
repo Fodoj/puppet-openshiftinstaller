@@ -15,7 +15,7 @@ define openshiftinstaller::invfile (
 
   # optional parameters
   $cluster_name       = $name,
-
+  $lbs                = [],
   $properties         = undef,
 
 ) {

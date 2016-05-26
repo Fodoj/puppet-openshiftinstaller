@@ -22,6 +22,8 @@ class openshiftinstaller (
   $query_fact         = 'role',
   $master_value       = 'openshift-master',
   $minion_value       = 'openshift-minion',
+  $query_lb_fact      = 'role_lb',
+  $lb_value           = 'openshift-lb',
   $cluster_name_fact  = 'openshift_cluster_name',
   $node_labels_fact   = 'node_labels',
   $install_type       = 'automatic',
@@ -82,6 +84,10 @@ class openshiftinstaller (
         "${query_fact}=\"${minion_value}\"",
         [ $cluster_name_fact ])
 
+      $lb_clusters = query_facts(
+        "${query_lb_fact}=\"${lb_value}\"",
+        [ $cluster_name_fact ])
+
       $nodes_labels_facts = query_facts(
         "${query_fact}=\"${minion_value}\"",
         [ $node_labels_fact ])
@@ -124,6 +130,13 @@ class openshiftinstaller (
         else
           cluster["nodes"] << nodename + " openshift_hostname=#{nodename}"
         end
+      }
+
+      @lb_clusters.each { |nodename, nodefacts|
+        cluster_name = nodefacts[@cluster_name_fact]
+        cluster = @invfiles[cluster_name]
+        cluster["lbs"] ||= []
+        cluster["lbs"] << nodename + " openshift_hostname=#{nodename}"
       }
 
     %>')

@@ -59,6 +59,14 @@ openshift_master_cluster_method=native
 <% end -%>
 <% end %>
 
+<% unless lbs.empty? %>
+# host group for lb
+[lb]
+<% @lbs.sort.each do |lb| -%>
+<%= lb %>
+<% end -%>
+<% end %>
+
 # host group for nodes
 [nodes]
 <% @nodes.sort.each do |node| -%>
