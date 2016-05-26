@@ -1,6 +1,6 @@
 {
   "name": "flypenguin-openshiftinstaller",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "author": "Axel Bock <axel.bock@amadeus.com>",
   "license": "MIT",
   "summary": "Installs openshift cluster using the official ansible installer from Redhat. Cluster nodes are collected by querying the puppetdb.",
