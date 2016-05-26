@@ -3,6 +3,9 @@
 [OSEv3:children]
 masters
 nodes
+<% if @masters.count > 1 %>
+etcd
+<% end %>
 
 # Set variables common for all OSEv3 hosts
 [OSEv3:vars]
@@ -37,14 +40,35 @@ openshift_additional_repos=[<%= ar %>]
 # ... no additional properties set.
 <% end -%>
 
+<% if @masters.count > 1 %>
+openshift_master_cluster_method=native
+<% end %>
+
 # host group for masters
 [masters]
 <% @masters.sort.each do |master| -%>
-<%= "#{master} openshift_hostname=#{master}" %>
+<%= master %>
 <% end -%>
+
+# host group for etcd
+
+<% if @masters.count > 1 %>
+[etcd]
+<% @masters.sort.each do |master| -%>
+<%= master %>
+<% end -%>
+<% end %>
+
+<% unless lbs.empty? %>
+# host group for lb
+[lb]
+<% @lbs.sort.each do |lb| -%>
+<%= lb %>
+<% end -%>
+<% end %>
 
 # host group for nodes
 [nodes]
 <% @nodes.sort.each do |node| -%>
-<%= "#{node} openshift_hostname=#{node}" %>
+<%= node %>
 <% end -%>
