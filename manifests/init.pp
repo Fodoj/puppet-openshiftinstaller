@@ -46,127 +46,116 @@ class openshiftinstaller (
   include ansible
   include ansible::playbooks
 
-  # install the check fact
-  file { '/etc/facter/facts.d/osi_puppetdb_running.py':
-    ensure  => 'present',
-    source  => 'puppet:///modules/openshiftinstaller/osi_puppetdb_running.py',
+  Class['::ansible::playbooks'] -> Class['openshiftinstaller']
+
+  $ansible_basedir   = $::ansible::playbooks::location
+  $inventory_basedir = "${ansible_basedir}/openshift_inventory"
+  $playbook_dirname  = 'openshift_playbook'
+  $playbook_basedir  = "${ansible_basedir}/${playbook_dirname}"
+
+  file { $inventory_basedir:
+    ensure  => directory,
+    owner   => root,
+    group   => root,
     mode    => '0755',
+    purge   => true,
+    force   => true,
+    recurse => true,
+    ignore  => 'cluster_*_success',
+    source  => 'puppet:///modules/openshiftinstaller/EMPTY_DIR',
   }
 
-  if $::osi_puppetdb_running == 'yes' {
+  if ! $::test_and_dont_run {
+    # real world
+    $masters_clusters = query_facts(
+      "${query_fact}=\"${master_value}\"",
+      [ $cluster_name_fact ])
 
-    Class['::ansible::playbooks'] -> Class['openshiftinstaller']
+    $nodes_clusters = query_facts(
+      "${query_fact}=\"${minion_value}\"",
+      [ $cluster_name_fact ])
 
-    $ansible_basedir   = $::ansible::playbooks::location
-    $inventory_basedir = "${ansible_basedir}/openshift_inventory"
-    $playbook_dirname  = 'openshift_playbook'
-    $playbook_basedir  = "${ansible_basedir}/${playbook_dirname}"
+    $lb_clusters = query_facts(
+      "${query_lb_fact}=\"${lb_value}\"",
+      [ $cluster_name_fact ])
 
-    file { $inventory_basedir:
-      ensure  => directory,
-      owner   => root,
-      group   => root,
-      mode    => '0755',
-      purge   => true,
-      force   => true,
-      recurse => true,
-      ignore  => 'cluster_*_success',
-      source  => 'puppet:///modules/openshiftinstaller/EMPTY_DIR',
+    $nodes_labels_facts = query_facts(
+      "${query_fact}=\"${minion_value}\"",
+      [ $node_labels_fact ])
+
+  } else {
+    $masters_clusters = $::openshiftinstaller::params::test_masters
+    $nodes_clusters   = $::openshiftinstaller::params::test_minions
+  }
+
+  $invfiles = {}
+  $cluster_names = []
+
+  # this is again black inline template magic. we should enable the future
+  # parser for this, or write a custom function (but then we run into the
+  # environment problems ...)
+  $discard_me = inline_template('<%
+
+    @masters_clusters.each { |nodename, nodefacts|
+      cluster_name = nodefacts[@cluster_name_fact]
+      @cluster_names << cluster_name
+      @invfiles[cluster_name] ||= {}
+      cluster = @invfiles[cluster_name]
+      cluster["masters"] ||= []
+      cluster["masters"] << nodename + " openshift_hostname=#{nodename}"
     }
 
-    if ! $::test_and_dont_run {
-      # real world
-      $masters_clusters = query_facts(
-        "${query_fact}=\"${master_value}\"",
-        [ $cluster_name_fact ])
+    @cluster_names.uniq!
+    @cluster_names.sort!
 
-      $nodes_clusters = query_facts(
-        "${query_fact}=\"${minion_value}\"",
-        [ $cluster_name_fact ])
-
-      $lb_clusters = query_facts(
-        "${query_lb_fact}=\"${lb_value}\"",
-        [ $cluster_name_fact ])
-
-      $nodes_labels_facts = query_facts(
-        "${query_fact}=\"${minion_value}\"",
-        [ $node_labels_fact ])
-
-    } else {
-      $masters_clusters = $::openshiftinstaller::params::test_masters
-      $nodes_clusters   = $::openshiftinstaller::params::test_minions
+    @nodes_clusters.each { |nodename, nodefacts|
+      cluster_name = nodefacts[@cluster_name_fact]
+      # we only create clusters which have masters :)
+      # no idea if this is actually useful, but lets just be sure.
+      next unless @invfiles.has_key? cluster_name
+      # lets go on.
+      cluster = @invfiles[cluster_name]
+      cluster["nodes"] ||= []
+      if @nodes_labels_facts[nodename] != nil
+        cluster["nodes"] << nodename + " openshift_hostname=#{nodename}" + " openshift_node_labels=\"#{@nodes_labels_facts[nodename]["node_labels"]}\""
+      else
+        cluster["nodes"] << nodename + " openshift_hostname=#{nodename}"
+      end
     }
 
-    $invfiles = {}
-    $cluster_names = []
-
-    # this is again black inline template magic. we should enable the future
-    # parser for this, or write a custom function (but then we run into the
-    # environment problems ...)
-    $discard_me = inline_template('<%
-
-      @masters_clusters.each { |nodename, nodefacts|
-        cluster_name = nodefacts[@cluster_name_fact]
-        @cluster_names << cluster_name
-        @invfiles[cluster_name] ||= {}
-        cluster = @invfiles[cluster_name]
-        cluster["masters"] ||= []
-        cluster["masters"] << nodename + " openshift_hostname=#{nodename}"
-      }
-
-      @cluster_names.uniq!
-      @cluster_names.sort!
-
-      @nodes_clusters.each { |nodename, nodefacts|
-        cluster_name = nodefacts[@cluster_name_fact]
-        # we only create clusters which have masters :)
-        # no idea if this is actually useful, but lets just be sure.
-        next unless @invfiles.has_key? cluster_name
-        # lets go on.
-        cluster = @invfiles[cluster_name]
-        cluster["nodes"] ||= []
-        if @nodes_labels_facts[nodename] != nil
-          cluster["nodes"] << nodename + " openshift_hostname=#{nodename}" + " openshift_node_labels=\"#{@nodes_labels_facts[nodename]["node_labels"]}\""
-        else
-          cluster["nodes"] << nodename + " openshift_hostname=#{nodename}"
-        end
-      }
-
-      @lb_clusters.each { |nodename, nodefacts|
-        cluster_name = nodefacts[@cluster_name_fact]
-        cluster = @invfiles[cluster_name]
-        cluster["lbs"] ||= []
-        cluster["lbs"] << nodename + " openshift_hostname=#{nodename}"
-      }
-
-    %>')
-
-    # finally, let's create it ;)
-    create_resources('openshiftinstaller::invfile',
-                      $invfiles,
-                      { 'basedir' => $inventory_basedir })
-
-    Invfile<||> -> Exec['clone openshift-ansible']
-
-    $cmdline_select_branch = $playbookversion ? {
-      '__UNSET__' => '',
-      default     => " -b ${playbookversion}",
+    @lb_clusters.each { |nodename, nodefacts|
+      cluster_name = nodefacts[@cluster_name_fact]
+      cluster = @invfiles[cluster_name]
+      cluster["lbs"] ||= []
+      cluster["lbs"] << nodename + " openshift_hostname=#{nodename}"
     }
 
-    exec { 'clone openshift-ansible':
-      command => "/usr/bin/git clone ${playbooksrc}${cmdline_select_branch} --single-branch ${playbook_dirname}",
-      cwd     => $ansible_basedir,
-      unless  => "/usr/bin/test -d '${playbook_basedir}'",
-    }
+  %>')
 
-    Exec['clone openshift-ansible'] -> Installcluster<||>
+  # finally, let's create it ;)
+  create_resources('openshiftinstaller::invfile',
+                    $invfiles,
+                    { 'basedir' => $inventory_basedir })
 
-    # we only install clusters for which we found a master (in the magic template
-    # above we only add the cluster name to $cluster_names from the master hosts)
-    if $install_type == 'automatic' {
-      installcluster { $cluster_names: }
-    }
+  Invfile<||> -> Exec['clone openshift-ansible']
 
+  $cmdline_select_branch = $playbookversion ? {
+    '__UNSET__' => '',
+    default     => " -b ${playbookversion}",
+  }
+
+  exec { 'clone openshift-ansible':
+    command => "/usr/bin/git clone ${playbooksrc}${cmdline_select_branch} --single-branch ${playbook_dirname}",
+    cwd     => $ansible_basedir,
+    unless  => "/usr/bin/test -d '${playbook_basedir}'",
+  }
+
+  Exec['clone openshift-ansible'] -> Installcluster<||>
+
+  # we only install clusters for which we found a master (in the magic template
+  # above we only add the cluster name to $cluster_names from the master hosts)
+  if $install_type == 'automatic' {
+    installcluster { $cluster_names: }
   }
 
 }

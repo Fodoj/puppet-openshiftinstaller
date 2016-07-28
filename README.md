@@ -65,9 +65,6 @@ It would then ...
 * We do not allow for different cluster configurations right now. It's a one-config-for-all situation. 
 * The module will only run ansible for clusters for which a master is found (the cluster inventory file is always created nonetheless).
 * The module will try to create the cluster until ansible ran through successfully one time
-* The module will install a dynamic fact called `osi_puppetb_running`, which can be `yes` or `no`. If it is anything other than `yes` the installer will not run.
-  * The fact is currently checking the puppetdb on `http://localhost:8080/v3`, which is the reason that the PuppetDB must run on the same host. This really should change.
-
 
 ## Internal mechanisms
 
